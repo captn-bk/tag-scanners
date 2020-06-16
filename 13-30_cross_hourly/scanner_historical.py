@@ -23,8 +23,11 @@ GUILD = os.getenv('DISCORD_GUILD')
 CHANNEL = os.getenv('DISCORD_CHANNEL')
 
 # Discord 
-postToDiscord = True
+postToDiscord = False
 client = discord.Client()
+
+# Pandas options
+pd.options.display.float_format = '{:,.2f}'.format
 
 # We only consider stocks with per-share prices inside this range
 min_share_price = 5.0
@@ -63,12 +66,12 @@ async def run_scanner():
     filtered_tickers = [ticker for ticker in tickers if (
         ticker.ticker in symbols and
         ticker.lastTrade['p'] >= min_share_price and
-        ticker.lastTrade['p'] <= max_share_price and
+        # ticker.lastTrade['p'] <= max_share_price and
         ticker.prevDay['v'] > min_volume
     )]
 
     filtered_symbols = [ticker.ticker for ticker in filtered_tickers]
-    # filtered_symbols = ['ENPH']
+    # filtered_symbols = ['ENPH','SPY']
 
     print('Filtered_symbols length = ',len(filtered_symbols))
     print(filtered_symbols)
@@ -119,7 +122,7 @@ async def run_scanner():
         new_results_df['price_change'] = new_results_df['close'] - new_results_df['prev_close']
         
         # drop the unecessary columns
-        new_results_df = new_results_df.drop(columns=['open', 'high','close' 'low','fast_sma','slow_sma','prev_fast_sma','prev_slow_sma','prev_close'])
+        new_results_df = new_results_df.drop(columns=['open', 'high','close','low','fast_sma','slow_sma','prev_fast_sma','prev_slow_sma','prev_close'])
         new_results_df = new_results_df[['symbol','dir','price_change','volume']]
         # print(new_results_df)
 
@@ -129,6 +132,7 @@ async def run_scanner():
             results_df_dict[df_counter] = new_results_df
         else:
             results_df_dict[df_counter] = results_df_dict[df_counter].append(new_results_df)
+        # print(results_df_dict)
         
     if(results_df_dict):
         for key in results_df_dict:
