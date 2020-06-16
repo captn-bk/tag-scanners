@@ -28,7 +28,7 @@ client = discord.Client()
 
 # We only consider stocks with per-share prices inside this range
 min_share_price = 5.0
-max_share_price = 500.0
+# max_share_price = 500.0
 
 # moving average variables
 sma_slow = 30
@@ -36,6 +36,9 @@ sma_fast = 13
 
 # Minimum previous-day volume for a stock we might consider
 min_volume = 2000000
+
+# Price change threshold - absolute val
+price_change_threshold = .10
 
 # time variables for loading historical ticks
 time_now = datetime.now().strftime('%Y-%m-%d')
@@ -80,7 +83,7 @@ async def run_scanner():
             filtered_tickers = [ticker for ticker in tickers if (
                 ticker.ticker in symbols and
                 ticker.lastTrade['p'] >= min_share_price and
-                ticker.lastTrade['p'] <= max_share_price and
+                # ticker.lastTrade['p'] <= max_share_price and
                 ticker.prevDay['v'] > min_volume
             )]
 
@@ -119,7 +122,7 @@ async def run_scanner():
                 df['symbol'] = symbol
 
                 df = df.tail(1)
-                print(df)
+                # print(df)
                 
                 # # extract dataframes for advancing / declining 13/30 crosses
                 df_advancing_crosses = df.loc[(df['fast_sma'] > df['slow_sma']) & (df['prev_fast_sma'] < df['prev_slow_sma'])]
@@ -134,6 +137,8 @@ async def run_scanner():
 
                 # calculate the difference between the moving averages as a "score"
                 new_results_df['price_change'] = new_results_df['close'] - new_results_df['prev_close']
+                over_threshold =  abs(new_results_df['price_change']) > price_change_threshold
+                new_results_df = new_results_df[over_threshold]
                 
                 # drop the unecessary columns
                 new_results_df = new_results_df.drop(columns=['open', 'high','close','low','fast_sma','slow_sma','prev_fast_sma','prev_slow_sma','prev_close'])
@@ -150,6 +155,14 @@ async def run_scanner():
             if(results_df_dict):
                 for key in results_df_dict:
                     split_df = results_df_dict[key]
+                    # format the columns correctly (first reset index to get timestamp out of index)
+                    
+                    split_df = split_df.reset_index()
+                    # drop the timezone - FIXME:
+                    # split_df['timestamp'] = split_df['timestamp'].replace(tzinfo=None)
+                    format_dict = {'volume':'{:,.0f}', 'timestamp': '{%x %X}', 'price_change': '${:.3f}'}
+                    split_df.style.format(format_dict)
+
                     if(split_df.empty == False):
                         message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers=['symbol','dir','price_change','volume'], tablefmt='github' )
                         print(message)
@@ -163,6 +176,8 @@ async def run_scanner():
                             message = '```' + message + '```'
                         
                             await channel.send(message)
+            else:
+                print('No Crossovers detected')
             
     else:
         print('Waiting to run until the next hour')
