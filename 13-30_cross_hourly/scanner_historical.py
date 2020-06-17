@@ -177,5 +177,5 @@ async def run_scanner():
                     await channel.send(message)
     else:
         print('No Crossovers detected')
-
+    
 client.run(TOKEN)
