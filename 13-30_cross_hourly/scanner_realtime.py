@@ -77,7 +77,7 @@ async def run_scanner():
 
     if((now != before) &
        (datetime.now().astimezone(nyc).minute == minuteToRunOn) &
-       (datetime.now().astimezone(nyc).hour >= 9) & 
+       (datetime.now().astimezone(nyc).hour > 9) & 
        (datetime.now().astimezone(nyc).hour <= 16)):
 
             df_counter = 1
