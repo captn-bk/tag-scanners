@@ -3,7 +3,7 @@ import requests
 import logging
 import time
 from tabulate import tabulate
-from pytz import timezone
+import talib as ta
 import numpy as np
 from datetime import datetime, timedelta
 from pytz import timezone
@@ -47,6 +47,16 @@ time_before = (datetime.now()-(timedelta(days=7))).strftime('%Y-%m-%d')
 # timetracking variables when first run
 nyc = timezone('America/New_York')
 minuteToRunOn = 1
+
+# function to return the RSI attribute
+def applyRSI(row):
+    if row['rsi'] < 30:
+        val = '*OVERSOLD*'
+    elif row['rsi'] > 70:
+        val = '*OVERBOUGHT*'
+    else:
+        val = ''
+    return val
 
 @client.event
 async def on_ready():
@@ -113,13 +123,18 @@ async def run_scanner():
                 
                 # print(df)
 
-                # add to the data frame the fast and slow moving averages as well as the previous values
+                # add some extra data to the frame
                 df['fast_sma'] = df['close'].rolling(window=sma_fast).mean()
                 df['slow_sma'] = df['close'].rolling(window=sma_slow).mean()
                 df['prev_close'] = df['close'].shift()
                 df['prev_fast_sma'] = df['fast_sma'].shift()
                 df['prev_slow_sma'] = df['slow_sma'].shift()
                 df['symbol'] = symbol
+                df['price_change'] = df['close']-df['prev_close']
+                df['perc_change'] = ((df['close']-df['prev_close']) / df['prev_close'])*100
+                df['rsi'] = ta.RSI(np.array(df['close']))
+                # df['rsi_rating'] = df.apply(applyRSI, axis=1)
+                df.index = df.index.strftime("%x %I %p")
 
                 df = df.tail(1)
                 # print(df)
@@ -135,14 +150,13 @@ async def run_scanner():
                 # # combine into results data frame
                 new_results_df = pd.concat([df_advancing_crosses, df_declining_crosses])
 
-                # calculate the difference between the moving averages as a "score"
-                new_results_df['price_change'] = new_results_df['close'] - new_results_df['prev_close']
+                # calculate the if the price change is over the threshold
                 over_threshold =  abs(new_results_df['price_change']) > price_change_threshold
                 new_results_df = new_results_df[over_threshold]
                 
-                # drop the unecessary columns
+                # drop the unecessary columns        
                 new_results_df = new_results_df.drop(columns=['open', 'high','close','low','fast_sma','slow_sma','prev_fast_sma','prev_slow_sma','prev_close'])
-                new_results_df = new_results_df[['symbol','dir','price_change','volume']]
+                new_results_df = new_results_df[['symbol','dir','price_change','perc_change','volume','rsi']]
                 # print(new_results_df)
 
                 # add the dataframe to the dictionary of dfs if there's room
@@ -155,16 +169,15 @@ async def run_scanner():
             if(results_df_dict):
                 for key in results_df_dict:
                     split_df = results_df_dict[key]
-                    # format the columns correctly (first reset index to get timestamp out of index)
-                    
                     split_df = split_df.reset_index()
-                    # drop the timezone - FIXME:
-                    # split_df['timestamp'] = split_df['timestamp'].replace(tzinfo=None)
-                    format_dict = {'volume':'{:,.0f}', 'timestamp': '{%x %X}', 'price_change': '${:.3f}'}
-                    split_df.style.format(format_dict)
-
+                    
+                    # format the columns correctly FIXME:
+                    # format_dict = {'volume':'{0:,}'}
+                    # split_df.style.format(format_dict)
+                    # print(split_df)
+                    
                     if(split_df.empty == False):
-                        message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers=['symbol','dir','price_change','volume'], tablefmt='github' )
+                        message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers='keys', tablefmt='github', showindex=False )
                         print(message)
 
                         if(postToDiscord):

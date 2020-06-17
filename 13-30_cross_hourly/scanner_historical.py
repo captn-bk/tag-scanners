@@ -3,7 +3,7 @@ import requests
 import logging
 import time
 from tabulate import tabulate
-from pytz import timezone
+import talib as ta
 import numpy as np
 from datetime import datetime, timedelta
 from pytz import timezone
@@ -27,11 +27,10 @@ postToDiscord = True
 client = discord.Client()
 
 # Pandas options
-pd.options.display.float_format = '{:,.2f}'.format
+# pd.options.display.float_format = "{:,.2f}".format
 
 # We only consider stocks with per-share prices inside this range
 min_share_price = 5.0
-# max_share_price = 50.0
 
 # moving average variables
 sma_slow = 30
@@ -46,6 +45,16 @@ price_change_threshold = .10
 # time variables for loading historical ticks
 time_now = datetime.now().strftime('%Y-%m-%d')
 time_before = (datetime.now()-(timedelta(days=7))).strftime('%Y-%m-%d')
+
+# function to return the RSI attribute
+def applyRSI(row):
+    if row['rsi'] < 30:
+        val = '*OVERSOLD*'
+    elif row['rsi'] > 70:
+        val = '*OVERBOUGHT*'
+    else:
+        val = ''
+    return val
 
 @client.event
 async def on_ready():
@@ -69,12 +78,11 @@ async def run_scanner():
     filtered_tickers = [ticker for ticker in tickers if (
         ticker.ticker in symbols and
         ticker.lastTrade['p'] >= min_share_price and
-        # ticker.lastTrade['p'] <= max_share_price and
         ticker.prevDay['v'] > min_volume
     )]
 
     filtered_symbols = [ticker.ticker for ticker in filtered_tickers]
-    # filtered_symbols = ['ENPH','SPY']
+    # filtered_symbols = ['ENPH']
 
     print('Filtered_symbols length = ',len(filtered_symbols))
     print(filtered_symbols)
@@ -99,13 +107,20 @@ async def run_scanner():
         
         # print(df)
 
-        # add to the data frame the fast and slow moving averages as well as the previous values
+        # add some extra data to the frame
         df['fast_sma'] = df['close'].rolling(window=sma_fast).mean()
         df['slow_sma'] = df['close'].rolling(window=sma_slow).mean()
         df['prev_close'] = df['close'].shift()
         df['prev_fast_sma'] = df['fast_sma'].shift()
         df['prev_slow_sma'] = df['slow_sma'].shift()
         df['symbol'] = symbol
+        df['price_change'] = df['close']-df['prev_close']
+        df['perc_change'] = ((df['close']-df['prev_close']) / df['prev_close'])*100
+        df['rsi'] = ta.RSI(np.array(df['close']))
+        # df['rsi_rating'] = df.apply(applyRSI, axis=1)
+        df.index = df.index.strftime("%x %I %p")
+
+        # print(df)
 
         ### NOTE this can be removed / modified if we want to evaluate ALL the crosses for a given time period and not just the last one
         df = df.tail(1)
@@ -113,22 +128,19 @@ async def run_scanner():
         # # extract dataframes for advancing / declining 13/30 crosses
         df_advancing_crosses = df.loc[(df['fast_sma'] > df['slow_sma']) & (df['prev_fast_sma'] < df['prev_slow_sma'])]
         df_advancing_crosses['dir'] = 'Up'
-        # # print(df_advancing_crosses)
         df_declining_crosses = df.loc[(df['fast_sma'] < df['slow_sma']) & (df['prev_fast_sma'] > df['prev_slow_sma'])]
         df_declining_crosses['dir'] = 'Down'
-        # # print(df_declining_crosses)
 
         # # combine into results data frame
         new_results_df = pd.concat([df_advancing_crosses, df_declining_crosses])
 
-        # calculate the difference between the moving averages as a "score" and if that meets the threshold
-        new_results_df['price_change'] = new_results_df['close'] - new_results_df['prev_close']
+        # calculate the if the price change is over the threshold
         over_threshold =  abs(new_results_df['price_change']) > price_change_threshold
         new_results_df = new_results_df[over_threshold]
         
         # drop the unecessary columns
         new_results_df = new_results_df.drop(columns=['open', 'high','close','low','fast_sma','slow_sma','prev_fast_sma','prev_slow_sma','prev_close'])
-        new_results_df = new_results_df[['symbol','dir','price_change','volume']]
+        new_results_df = new_results_df[['symbol','dir','price_change','perc_change','volume','rsi']]
 
         # print(new_results_df)
 
@@ -143,16 +155,15 @@ async def run_scanner():
     if(results_df_dict):
         for key in results_df_dict:
             split_df = results_df_dict[key]
-            
-            # format the columns correctly (first reset index to get timestamp out of index)
             split_df = split_df.reset_index()
-            # drop the timezone - FIXME:
-            # split_df['timestamp'] = split_df['timestamp'].replace(tzinfo=None)
-            format_dict = {'volume':'{:,.0f}', 'timestamp': '{%x %X}', 'price_change': '${:.3f}'}
-            split_df.style.format(format_dict)
+            
+            # format the columns correctly FIXME:
+            # format_dict = {'volume':'{0:,}'}
+            # split_df.style.format(format_dict)
+            # print(split_df)
             
             if(split_df.empty == False):
-                message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers=['symbol','dir','price_change','volume'], tablefmt='github' )
+                message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers='keys', tablefmt='github', showindex=False )
                 print(message)
 
                 if(postToDiscord):
