@@ -171,13 +171,8 @@ async def run_scanner():
                     split_df = results_df_dict[key]
                     split_df = split_df.reset_index()
                     
-                    # format the columns correctly FIXME:
-                    # format_dict = {'volume':'{0:,}'}
-                    # split_df.style.format(format_dict)
-                    # print(split_df)
-                    
                     if(split_df.empty == False):
-                        message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers='keys', tablefmt='github', showindex=False )
+                        message = '13/30 Moving Average Crossover - ALERT:\n' + tabulate(split_df, headers='keys', tablefmt='github', showindex=False, floatfmt=(",.2f",",.2f",",.2f",",.2f",",.2f",",.2f",",.0f"))
                         print(message)
 
                         if(postToDiscord):
